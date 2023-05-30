@@ -83,7 +83,7 @@ staticcheck: .PHONY
 # Building targets
 
 build: .PHONY
-	goreleaser build --rm-dist
+	goreleaser build --rm-dist --skip-validate
 
 build-snapshot:
 	goreleaser build --snapshot --rm-dist

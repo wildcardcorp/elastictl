@@ -16,17 +16,19 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 var (
 	client              = &http.Client{}
 	settingsToRemove    = []string{"settings.index.creation_date", "settings.index.uuid", "settings.index.version", "settings.index.provided_name"}
 	errTemporaryFailure = errors.New("temporary failure")
+	
 )
 
 func Import(host string, index string, workers int, nocreate bool, shards int, replicas int, r io.Reader, totalHint int) (int, error) {
 	log.Printf("importing index %s/%s", host, index)
-	rootURI := fmt.Sprintf("http://%s/%s", host, index)
+	rootURI := fmt.Sprintf("%s/%s", host, index)
 	scanner := bufio.NewScanner(r)
 
 	// Create index
@@ -97,6 +99,7 @@ func Import(host string, index string, workers int, nocreate bool, shards int, r
 
 func importWorker(wg *sync.WaitGroup, docsChan chan string, progress *util.ProgressBar, client *http.Client, rootURI string, imported *int64) {
 	defer wg.Done()
+	MAX_RETRIES := 20
 	for doc := range docsChan {
 		id := url.QueryEscape(gjson.Get(doc, "_id").String())
 		dtype := gjson.Get(doc, "_type").String()
@@ -104,23 +107,34 @@ func importWorker(wg *sync.WaitGroup, docsChan chan string, progress *util.Progr
 		uri := fmt.Sprintf("%s/%s/%s", rootURI, dtype, id)
 		req, err := http.NewRequest("PUT", uri, strings.NewReader(source))
         req.Header.Add("Content-Type", "application/json")
+
 		if err != nil {
 			fmt.Printf("error creating PUT request: %s\n", err.Error())
 			continue
 		}
-		resp, err := client.Do(req)
-		if err != nil {
-			fmt.Printf("PUT failed: %s\n", err.Error())
-			continue
+
+		for i := 0; i < MAX_RETRIES; i++ {
+			resp, err := client.Do(req)
+
+			if err != nil {
+				fmt.Printf("PUT failed: %s\n", err.Error())
+				fmt.Println("Retrying...")
+				time.Sleep(2 * time.Second)
+			}
+
+			if resp.StatusCode != 201 && resp.StatusCode != 200 {
+				fmt.Printf("PUT returned unexpected response: %d\n", resp.StatusCode)
+				fmt.Println("Retrying...")
+				time.Sleep(2 * time.Second)
+			} else {
+				break
+				}
+			if resp.Body != nil {
+				io.Copy(ioutil.Discard, resp.Body)
+				resp.Body.Close()
+			}
 		}
-		if resp.StatusCode != 201 && resp.StatusCode != 200 {
-			fmt.Printf("PUT returned unexpected response: %d\n", resp.StatusCode)
-			continue
-		}
-		if resp.Body != nil {
-			io.Copy(ioutil.Discard, resp.Body)
-			resp.Body.Close()
-		}
+
 		progress.Add(int64(len(source)))
 		atomic.AddInt64(imported, 1)
 	}
