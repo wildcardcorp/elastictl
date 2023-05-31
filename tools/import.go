@@ -122,7 +122,7 @@ func importWorker(wg *sync.WaitGroup, docsChan chan string, progress *util.Progr
 				time.Sleep(2 * time.Second)
 			}
 
-			if resp.StatusCode != 201 && resp.StatusCode != 200 {
+			if resp.StatusCode != 201 && resp.StatusCode != 200 && resp.StatusCode != 400 {
 				fmt.Printf("PUT returned unexpected response: %d\n", resp.StatusCode)
 				fmt.Println("Retrying...")
 				time.Sleep(2 * time.Second)

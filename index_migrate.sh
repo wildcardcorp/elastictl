@@ -14,10 +14,17 @@ MATCHER=$2
 for index in `curl -s "https://$OLD_USER:$OLD_PWD@$OLD_HOST/_aliases?pretty=true" | awk -F\" '!/aliases/ && $2 != "" {print $2}' | grep $1 | grep $2 | sort -r`; do
     printf 'Moving: %s\n' "$index"
 
+minimumsize=50
 FILE=indexes/$index.json.gz
 
 if [ -f "$FILE" ]; then
     echo "$FILE export already  exists."
+
+if [[ $(stat -c%s $FILE) -le $minimumsize ]]; then
+    rm $FILE
+fi
+
+
 else
     echo "$FILE export does not exist. Exporting..."
     ./elastictl export  --host https://$OLD_USER:$OLD_PWD@$OLD_HOST:443 $index | gzip >  $FILE
